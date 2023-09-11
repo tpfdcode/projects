@@ -1,0 +1,31 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(skimr)
+library(lubridate)
+library(here)
+
+here:: here
+simd <- read_csv("../raw_data/inpatient_and_daycase_by_nhs_board_of_treatment_and_simd.csv")
+hb_codes <- read_csv("../raw_data/health_board.csv") %>% select(HB, HBName)
+skim(simd)
+
+simd <- simd %>% 
+  filter(is.na(HBQF)& !is.na(LocationQF)) %>% 
+  filter(AdmissionType == "Elective Inpatients" | AdmissionType == "Emergency Inpatients") %>%
+  mutate(Year = substr(Quarter, 1, 4),
+       Quarter_single = substr(Quarter, 5, 6)) %>% 
+  mutate(SIMD = as.integer(SIMD)) %>% mutate(AverageLengthOfStay = as.integer(AverageLengthOfStay))
+ 
+
+simd <-  left_join(simd, hb_codes, by = "HB")
+
+# simd <- simd %>% select(Quarter, Year, Quarter_single, HBName, AdmissionType, SIMD, Episodes, LengthOfEpisode, AverageLengthOfEpisode, Stays, LengthOfStay, AverageLengthOfStay)
+simd %>% distinct(SIMD)
+write_csv(simd, file = "../clean_data/simd_clean.csv")
+```

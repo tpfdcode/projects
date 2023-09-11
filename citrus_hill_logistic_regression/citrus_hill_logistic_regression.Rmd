@@ -1,0 +1,473 @@
+---
+title: "Citrus Hill Logistic Regression"
+output: html_notebook
+---
+
+#Brief
+
+Provided with a set of data on customer purchases of either ‘Citrus Hill’ (purchase = 'CH') or ‘Minute Maid’ (purchase = 'MM') orange juice, together with some further attributes of both the customer and the store of purchase, build the best predictive classifier of whether a customer is likely to buy Citrus Hill or Minute Maid juice. 
+
+##Data Wrangling
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(janitor)
+library(GGally)
+library(glmulti)
+library(pROC)
+```
+
+```{r}
+oj <- clean_names(read_csv("data/orange_juice.csv"))
+```
+```{r}
+glimpse(oj)
+```
+
+```{r}
+oj <- oj %>%
+  rename(
+    week_of_purchase = weekof_purchase,
+    store_7 = store7
+  ) %>%
+  mutate(
+    special_ch = as.logical(special_ch),
+    special_mm = as.logical(special_mm),
+    store_7 = store_7 == "Yes",
+    store_id = as_factor(store_id),
+    store = as_factor(store)
+  )
+glimpse(oj)
+```
+
+```{r}
+oj %>%
+  group_by(purchase) %>%
+  summarise(n = n())
+```
+
+```{r}
+oj %>%
+  group_by(week_of_purchase) %>%
+  summarise(n = n())
+```
+
+Adding in a week_of_purchase_fac variable so we can test the effect of each treatment of week.
+
+```{r}
+oj <- oj %>%
+  mutate(week_of_purchase_fac = as_factor(week_of_purchase))
+```
+
+Mutating the dependent variable to be logical, using purchase_mm as level “MM” is the minority
+ 
+```{r}
+oj <- oj %>%
+  mutate(purchase_mm = purchase == "MM") %>%
+  select(-purchase)
+```
+ 
+Checking for aliases in the independent variables
+ 
+```{r}
+alias(purchase_mm ~ ., data = oj)
+```
+ 
+sale_price_mm, sale_price_ch, price_diff, store_7, list_price_diff and store can be derived from other variables, so removing them. There is also an alias between week_of_purchase and week_of_purchase_fac, so, again, only including one of these variable in the model.
+
+```{r}
+oj_trim <- oj %>%
+  select(-c("sale_price_mm", "sale_price_ch", "price_diff", "store_7", "list_price_diff", "store"))
+```
+
+##Model
+
+Splitting the variables and look at pairs plots to investigate the relationships of variables with purchase_mm
+
+```{r}
+names(oj_trim)
+```
+
+```{r}
+set1 <- oj_trim %>%
+  select(week_of_purchase, store_id, price_ch, price_mm, disc_ch, disc_mm, purchase_mm)
+
+set2 <- oj_trim %>%
+  select(special_ch, special_mm, loyal_ch, pct_disc_mm, pct_disc_ch, purchase_mm)
+```
+
+```{r}
+ggpairs(set1)
+```
+
+```{r}
+ggsave("pairs_plot_set1.png", width = 10, height = 10, units = "in")
+```
+
+```{r}
+ggpairs(set2)
+```
+
+```{r}
+ggsave("pairs_plot_set2.png", width = 10, height = 10, units = "in")
+```
+
+Looking at how purchase_mm varies with week_of_purchase_fac
+
+```{r}
+oj_trim %>%
+  ggplot(aes(x = week_of_purchase_fac, fill = purchase_mm)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+```{r}
+set.seed(42)
+
+test_indices <- sample(1:nrow(oj_trim), size = as.integer(nrow(oj_trim) * 0.2))
+
+train <- oj_trim %>%
+  slice(-test_indices)
+
+test <- oj_trim %>%
+  slice(test_indices)
+#check
+nrow(train) + nrow(test) == nrow(oj_trim)
+```
+
+Checking the distribution of outcome in the training and testing sets to see that they are roughly comparable.
+
+```{r}
+train %>%
+  tabyl(purchase_mm)
+```
+
+```{r}
+test %>%
+  tabyl(purchase_mm)
+```
+
+Simple models with all main effects, using BIC here to choose which of these variables to carry forward to automated model searches.
+
+```{r}
+mod1 <- glm(purchase_mm ~ . - week_of_purchase_fac, data = train, family = binomial(link = "logit"))
+summary(mod1)
+```
+
+```{r}
+bic(mod1)
+```
+
+```{r}
+mod2 <- glm(purchase_mm ~ . - week_of_purchase, data = train, family = binomial(link = "logit"))
+summary(mod2)
+```
+
+```{r}
+bic(mod2)
+```
+
+Automated fit guided by BIC values
+
+```{r}
+glmulti_search_all_mains <- glmulti(
+  purchase_mm ~ . - week_of_purchase_fac, 
+  data = train,
+  level = 1,               # No interaction considered
+  method = "h",            # Exhaustive approach
+  crit = "bic",            # BIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # binomial family for logistic regression
+
+summary(glmulti_search_all_mains)
+```
+
+Using the main effects model with lowest BIC from above and perform another exhaustive search looking to add a single pair
+
+```{r}
+glmulti_search_all_mains_one_pair <- glmulti(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch, 
+  data = train,
+  level = 2,               # Interactions considered
+  method = "h",            # Exhaustive approach
+  crit = "bic",            # BIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  marginality = TRUE,      # consider pairs only if both main effects in model
+  minsize = 6,             # minsize, maxsize and marginality here force 
+  maxsize = 6,             # inclusion of a single pair beyond the five main effects
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # binomial family for logistic regression
+
+summary(glmulti_search_all_mains_one_pair)
+```
+
+Getting out models with two pairs and three pairs
+
+```{r}
+glmulti_search_all_mains_two_pairs <- glmulti(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch, 
+  data = train,
+  level = 2,               # Interactions considered
+  method = "h",            # Exhaustive approach
+  crit = "bic",            # BIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  marginality = TRUE,      # consider pairs only if both main effects in model
+  minsize = 7,             # minsize, maxsize and marginality here force 
+  maxsize = 7,             # inclusion of a single pair beyond the five main effects
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # binomial family for logistic regression
+
+summary(glmulti_search_all_mains_two_pairs)
+```
+
+```{r}
+glmulti_search_all_mains_three_pairs <- glmulti(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch, 
+  data = train,
+  level = 2,               # Interactions considered
+  method = "h",            # Exhaustive approach
+  crit = "bic",            # BIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  marginality = TRUE,      # consider pairs only if both main effects in model
+  minsize = 8,             # minsize, maxsize and marginality here force 
+  maxsize = 8,             # inclusion of a single pair beyond the five main effects
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # binomial family for logistic regression
+
+summary(glmulti_search_all_mains_three_pairs)
+```
+
+The set of all possible models with all main effects and all possible pairs is too large to search exhaustively, so using a genetic algorithm search instead
+
+```{r}
+glmulti_ga_search_with_pairs <- glmulti(
+  purchase_mm ~ . - week_of_purchase_fac, 
+  data = train,
+  level = 2,               # Interactions considered
+  method = "g",            # Genetic algorithm approach
+  crit = "bic",            # BIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  marginality = TRUE,      # consider pairs only if both main effects in model
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # binomial family for logistic regression
+
+summary(glmulti_ga_search_with_pairs)
+```
+Best model: purchase_mm~1+price_mm+disc_ch+disc_mm+special_ch+loyal_ch+pct_disc_mm+special_ch:disc_ch+special_ch:disc_mm+pct_disc_mm:special_ch
+
+Now considering using AIC as our quality metric
+
+```{r}
+glmulti_ga_search_with_pairs_aic <- glmulti(
+  purchase_mm ~ . - week_of_purchase_fac, 
+  data = train,
+  level = 2,               # Interactions considered
+  method = "g",            # Genetic algorithm approach
+  crit = "aic",            # AIC as criteria
+  confsetsize = 10,        # Keep 10 best models
+  marginality = TRUE,      # Consider pairs only if both main effects in model
+  plotty = F, 
+  report = T,              # No plots, but provide interim reports
+  fitfunction = "glm",     # glm function
+  family = binomial(link = "logit")) # Binomial family for logistic regression
+
+summary(glmulti_ga_search_with_pairs_aic)
+```
+Best model: purchase_mm~1+store_id+week_of_purchase+price_ch+price_mm+disc_ch+disc_mm+special_ch+special_mm+loyal_ch+pct_disc_mm+pct_disc_ch+disc_ch:price_mm+special_ch:week_of_purchase+special_ch:price_mm+special_ch:disc_ch+special_ch:disc_mm+special_mm:week_of_purchase+special_mm:price_ch+loyal_ch:week_of_purchase+loyal_ch:price_mm+loyal_ch:disc_ch+loyal_ch:disc_mm+pct_disc_mm:price_ch+pct_disc_mm:disc_ch+pct_disc_mm:special_ch+pct_disc_mm:loyal_ch+pct_disc_ch:price_ch+pct_disc_ch:disc_mm+pct_disc_ch:pct_disc_mm+store_id:price_mm+store_id:special_ch+store_id:special_mm+store_id:pct_disc_mm
+
+Much larger as expected with AIC
+
+Testing the performance of all of the models on the test set. Looking for the model with highest AUC on test, but also comparing AUC values on train, just to check the effects of any over fitting.
+
+```{r}
+model_with_mains_bic <- glm(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch,
+  data = train,
+  family = binomial(link = "logit")
+)
+roc <- train %>%
+  add_predictions(model_with_mains_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_mains_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_mains_one_pair_bic <- glm(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch + disc_mm:price_mm,
+  data = train,
+  family = binomial(link = "logit")
+)
+
+roc <- train %>%
+  add_predictions(model_with_mains_one_pair_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_mains_one_pair_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_mains_two_pairs_bic <- glm(
+  purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch + pct_disc_ch:price_ch + pct_disc_ch:loyal_ch,
+  data = train,
+  family = binomial(link = "logit")
+)
+
+roc <- train %>%
+  add_predictions(model_with_mains_two_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_mains_two_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_mains_three_pairs_bic <- glm(
+  purchase_mm ~ 1 + price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch + disc_mm:price_mm + loyal_ch:price_mm + pct_disc_ch:loyal_ch,
+  data = train,
+  family = binomial(link = "logit")
+)
+
+roc <- train %>%
+  add_predictions(model_with_mains_three_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_mains_three_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_mains_all_pairs_bic <- glm(
+  purchase_mm ~ (price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch)^2,
+  data = train,
+  family = binomial(link = "logit")
+)
+
+roc <- train %>%
+  add_predictions(model_with_mains_all_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_mains_all_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_pairs_bic <- glm(
+  purchase_mm ~ week_of_purchase + disc_ch + disc_mm + special_ch + special_mm + loyal_ch + pct_disc_mm + special_ch:disc_ch + special_ch:disc_mm + special_mm:week_of_purchase + pct_disc_mm:special_ch, 
+  data = train,
+  family = binomial(link = "logit")
+)
+roc <- train %>%
+  add_predictions(model_with_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_pairs_bic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+model_with_pairs_aic <- glm(
+  purchase_mm ~ store_id + week_of_purchase + price_ch + price_mm + disc_ch + disc_mm + special_mm + loyal_ch + pct_disc_mm + pct_disc_ch + disc_mm:week_of_purchase + disc_mm:price_mm + special_mm:disc_mm + loyal_ch:week_of_purchase + loyal_ch:price_mm + loyal_ch:disc_ch + pct_disc_mm:week_of_purchase + pct_disc_mm:price_mm + pct_disc_mm:disc_ch + pct_disc_mm:disc_mm + pct_disc_ch:special_mm + store_id:week_of_purchase + store_id:price_ch + store_id:price_mm + store_id:disc_mm + store_id:special_mm, 
+  data = train, 
+  family = binomial(link = "logit")
+)
+roc <- train %>%
+  add_predictions(model_with_pairs_aic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+```{r}
+roc <- test %>%
+  add_predictions(model_with_pairs_aic, type = "response") %>%
+  roc(response = purchase_mm, predictor = pred)
+```
+
+```{r}
+auc(roc)
+```
+
+So we find that the fairly small purchase_mm ~ price_ch + price_mm + disc_mm + loyal_ch + pct_disc_ch + disc_mm:price_mm model leads to highest AUC value in test.

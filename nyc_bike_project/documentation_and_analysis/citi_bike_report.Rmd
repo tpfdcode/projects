@@ -1,0 +1,149 @@
+---
+title: "Citi Bike Report"
+output: html_notebook
+---
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(leaflet)
+```
+
+```{r, echo=FALSE, message =FALSE}
+nyc_bikes_clean <- read_csv("../clean_data/nyc_bikes_clean.csv")
+
+stations <- read_csv("../clean_data/stations.csv")
+```
+# Introduction
+
+Citi Bike, New York's bike share system, started in May 2013 and has grown to be the largest in the United States and is now a key part of New York City’s transportation network. They market themselves as being “fun, efficient and affordable – not to mention healthy and good for the environment.”
+
+Citi Bike's fleet is designed to be durable and sturdy and are placed within a network of docking stations around New York. The bike can be taken out and returned to any station so the journey does not have to be a round trip. They are perfect for people commuting to work or school, running errands, getting to appointments or other engagements. 
+
+Their bikes are available for use 24 hours/day, 7 days/week, 365 days/year, and riders have access to thousands of bikes at stations across New York.
+
+This report uses data collected in 2018 which will be analysed to answer 5 key questions that will aid in raising the number of hires which is the bike shares key performance indicator.
+
+The questions answered are as follows:
+
+1. What times of year are high and low use months?
+
+2. Which days of the week are most and least popular?
+
+3. How does gender impact use of the network?
+
+4. Does age have an impact on rider usage patterns?
+
+5. Where are the stations located/ are their any gaps?
+
+Before moving on to the analysis it is important to consider the ethics behind the report, data, and the bike share itself. The network has a positive impact on traffic congestion but more importantly it helps with reducing vehicle emissions while promoting healthy lifestyle choices. The overall impact of the project is undoubtedly ethical and the way they collect data is as well. Their data use policy is freely available and riders have the ability to view and consent to the data being collected. They only collect data that would be helpful for improving the network, they use ride id’s as the identifier, they collect starting and end stations, and trip duration to name a few examples. They don’t collect more invasive and unnecessary information like rider names or other identifiable data like their place of work. 
+
+# Analysis
+
+## 1. What times of year are high and low use months?
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(nyc_bikes_clean) +
+  geom_histogram(aes(x = month, y = ..count..), fill = "blue", color = "black", stat = "count") +
+  xlab("Month") +
+  ylab("Number of Rides") +
+  ggtitle("Rider Monthly Breakdown") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+On the graph above, the months are displayed on the x-axis and the number of rides on the y-axis. This allows us to see an overall yearly pattern that we can use to pinpoint low use months.
+
+Moving through the  year, January and February  are the months with the fewest rides however the ride count increases steadily beginning in March peaking in August. From there we see steep drops in September and November with a consistent downward trend from September to December. There is a clear pattern here where low use months are the winter months. Citi Bike could consider a reduced price during the winter months or they could create other incentives to attract riders during these slow periods. As the network is city run, they could consider ensuring the city infrastructure is appropriate for cyclists in winter by prioritizing clearing bike lanes of snow and ice and making sure the tires are weather appropriate. My final suggestion would be to try and find other business partners that could offer incentives to cyclists during the colder months, for example, discounted warm beverages at coffee shops.
+
+## 2. Which days of the week are most and least popular?
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(nyc_bikes_clean) +
+  geom_histogram(aes(x = day, y = ..count..), fill = "blue", color = "black", stat = "count") +
+  xlab("Day") +
+  ylab("Number of Rides") +
+  ggtitle("Rider Daily Breakdown") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+On this graph we are looking again at the number of riders but this time we have broken it down to the days of the week, the days are displayed on the x-axis and the number of rides on the y-axis. Here we see the typical weekly pattern.
+
+The goal here is to again be able to incentivise riders to use the service on slower days. Going through the graph, Sunday is the day with the least number of riders but there is a steady increase from there with the rider count peaking on Tuesday. The rider number remains fairly consistent in the back half of the week from Wednesday to Friday before taking a steep fall on Saturday. The weekends being significantly lower would suggest riders are perhaps primarily using the service for work commutes. Citi Bike could adjust weekend prices or increase the ride time to allow for more leisure cycling. It would be worth considering adjusting the fleet to include better storage as riders may have more items on the weekend if they are spending more time out of the house. They could create a tailored marketing campaign promoting the bikes as a key part in a fun weekend out, advertising the reduced weekend pricing. 
+
+## 3. How does gender impact use of the network?
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(nyc_bikes_clean) +
+  geom_histogram(aes(x = month, fill = gender), color = "white", stat = "count") +
+  labs(title = "Rider Demographics", x = "Month", y = "Number of Rides") +
+  theme_bw() +
+  facet_wrap(~ gender) +
+  scale_fill_manual(values = c("#2980B9", "blue", "#5DADE2")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+Here we have the months along the x-axis and the number of riders on the y-axis letting us compare use across the collected gender categories. 
+
+We can see that gender does not have a significant impact on rider behavior. The trends through the months and days are consistent across the genders tracked, however, a large majority of the riders are male. Having seen the design of the bike it contains a low step frame which is a common choice for manufacturers attempting to appeal to all genders as it prioritises comfort and ease of use. This would suggest that the demographic spread is less likely to be a result of the bike themselves and instead could be down to a number of barriers. As we saw looking at the yearly trends infrastructure changes could be a part of the solution here. Unfortunately, women have stronger safety concerns in public spaces so it is important to make sure riders feel safe using the service by keeping lanes well lit. It would also be important to address existing gender stereotypes around cycling. It is often the case that representation and role models are out there however they are often not afforded the same platforms as their male counterparts. An advertising campaign using prominent female cyclists would be a great idea at the moment. The Us team currently contains a number of stars such as Coryn Rivera who won the world championship in the same year the data was collected. Additionally, Citi Bike could look to create or sponsor existing women’s cycling groups. 
+
+## 4. Does age have an impact on rider usage patterns?
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(nyc_bikes_clean) +
+  geom_histogram(aes(x = month, fill = age_group), color = "black", stat = "count") +
+  labs(title = "Rider Age", x = "Month", y = "Number of Rides") +
+  theme_bw() +
+  facet_wrap(~ age_group)+
+  scale_fill_manual(values = c("#2980B9", "blue", "#5DADE2")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+Looking at age now, here we see the months again on the x-axis with the number of rides on the y-axis. To help with interpretation the ages are divided into groups 25 and under, 26 to 50, and 50and above. 
+
+A large majority of riders are in the 26-50 range with far fewer in the other categories. While the decrease in riders above 50 is expected there is a surprisingly low number of riders aged 25 and under. This is the group I would focus on when attempting to generate more rides as there are fewer barriers to use within this group. 
+
+I think a good idea would be to partner with universities and schools looking to install stations at or near these locations. Discounts for students would be another great way of targeting the younger demographic. I believe advertising campaigns would be best done over social media as there is a demographic overlap with the target audience and the riders.
+
+## 5. Where are the stations located/ are their any gaps?
+
+```{r, echo=FALSE, warning=FALSE}
+leaflet(stations) %>% 
+  addTiles() %>% 
+  addMarkers(
+    lng = ~long,
+    lat = ~lat,
+    clusterOptions = markerClusterOptions(),
+    
+  )
+```
+
+The map above is a street map provided by OpenStreetMap with each station identified by a pin. The map is using clusters to quickly identify areas that are well and poorly covered by the network. 
+
+There is a large concentration of stations around Grove Street however the surrounding areas are not as well covered. Hoboken does not contain any stations and the area East of Central Avenue and North of Manhattan Avenue is also empty. There is also only one station on the other side of the Hudson with the closest station being far away on Palisade Avenue. Citi Bike could address these issues by creating more stations in the north of the city and in Hoboken. They could also look to expand in to Manhattan and other areas on the opposite side of the Hudson. These area are also popular tourist areas with attractions like Central Park which could see this section become a popular part of the network. 
+
+# Summary
+
+In summary, we sought to answer 5 key questions. 
+
+1. What times of year are high and low use months?
+
+February was the lowest month with the winter months being considerably lower. The rider count had an increase throughout the year peaking in August with two large drops in September and November. 
+
+2. Which days of the week are most and least popular?
+
+The ride count was higher during weekdays peaking on Tuesday but was otherwise consistent during the weekdays. The weekends were much lower with Sunday being the least popular day.
+
+3. How does gender impact use of the network?
+
+While gender did not impact monthly or daily use trends the rider demographic is overwhelmingly male.
+
+4. Does age have an impact on rider usage patterns?
+
+Dividing the age in to groups 25 and under, 26 to 50, and 50 + there was a clear majority in the 26 to 50 range. Surprisingly, people 25 and under rarely used the service. 
+
+5. Where are the stations located/ are their any gaps?
+
+Stations were predominately located around Grove Street and the areas North of Manhattan Avenue and on the opposite side of the Hudson in Midtown and Manhattan were completely empty. 
+
+To address these issues the ride share could focus on improving cycling infrastructure in the city making it more appealing to use in the winter months and to make it an attractive option for women.  They could also try to incentivise weekend use through promotions and by adjusting the bikes to accommodate longer journeys. Advertising campaigns could be a solution to the first four questions. Finally, the network could be expanded to cover universities and schools to help attract younger riders and could further expand into areas to the North and to the East. 

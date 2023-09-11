@@ -1,0 +1,123 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(here)
+
+simd <- read.csv("../clean_data/simd_clean.csv")
+
+```
+SIMD  by Admission type
+
+
+Emergency admissions drive the volume - simd 1 and 2 tend to be admitted more often that otehr SIMD groups - across Scotland
+```{r}
+library(ggh4x) 
+ # and then this updated according to your data set 
+
+simd<- simd %>% drop_na(SIMD)
+simd %>%  
+  #& HBName == "NHS Ayrshire and Arran") %>% 
+group_by(Year, Quarter_single, AdmissionType, SIMD) %>% summarise(number_admissions = sum(Stays)) %>% 
+  ggplot(aes(x = interaction(Quarter_single, Year), y = number_admissions, group = SIMD, colour = SIMD))+
+   scale_x_discrete(guide = "axis_nested")+
+   facet_wrap( ~ AdmissionType)+
+  geom_vline(xintercept = "2020Q2", size = 1.5, colour = "red")+
+  annotate("rect", xmin = 1, xmax = 3, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue" ) +
+  annotate("rect", xmin = 5, xmax = 7, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue") +
+  annotate("rect", xmin = 9, xmax = 11, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue") +
+  annotate("rect", xmin = 13, xmax = 15, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue") +
+  annotate("rect", xmin = 17, xmax = 19, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue") +
+  annotate("rect", xmin = 21, xmax = 22, ymin = 0, ymax = 600, alpha = 0.2, fill = "lightblue") +
+  geom_line(size = 1.5)+
+  theme_light()+
+  scale_colour_manual(values = c("#1F3F49","#488A99" ,"#1C4E80","#4cb5f5" ,"#A5d8DD"  ))+
+theme(axis.text.x = element_text(hjust = 1, size = 12),
+      axis.text.y = element_text(size = 20),
+      title  = element_text(size = 20, face = "bold"), 
+ 
+      )+
+ 
+     labs(
+    title = "\nHospital Admissions by SIMD\n",
+    x = "\nQuarter\n",
+    y = "\nNumber of Admissions\n"
+  )
+  
+```
+
+
+hospital admissions per Health Board per SIMD
+```{r}
+
+simd %>% filter(HBName == "NHS Ayrshire and Arran" & SIMD == 4) %>% 
+  ggplot(aes(x = Quarter_single, y = AverageLengthOfStay, fill = AdmissionType, colour = AdmissionType)) +
+  
+  geom_col(position = "dodge", colour = "white")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    facet_wrap(~ Year)+
+    labs(
+    title = "\nAverage length of hospital stay by SIMD\n",
+    x = "\nQuarter\n",
+    y = "\nAverage length of stay (days)\n")
+    
+```
+
+```{r}
+# filtered by HBName and SIMD level
+simd %>% filter(HBName == "NHS Borders" & SIMD == 1) %>% 
+  ggplot(aes(x = Quarter, y = AverageLengthOfStay, group = AdmissionType, colour = AdmissionType)) +
+  geom_vline(xintercept = "2020Q2", size = 1.5, colour = "red")+
+    annotate("rect", xmin = 1, xmax = 3, ymin = 0, ymax =10, alpha = 0.2, fill = "lightblue" ) +
+    annotate("rect", xmin = 5, xmax = 7, ymin = 0, ymax = 10, alpha = 0.2, fill = "lightblue") +
+    annotate("rect", xmin = 9, xmax = 11, ymin = 0, ymax = 10, alpha = 0.2, fill = "lightblue") +
+    annotate("rect", xmin = 13, xmax = 15, ymin = 0, ymax = 10, alpha = 0.2, fill = "lightblue") +
+    annotate("rect", xmin = 17, xmax = 19, ymin = 0, ymax = 10, alpha = 0.2, fill = "lightblue") +
+    annotate("rect", xmin = 21, xmax = 22, ymin = 0, ymax = 10, alpha = 0.2, fill = "lightblue") +
+  geom_point()+
+  geom_line(size = 1)+
+  theme_minimal()+
+    scale_colour_manual(values = c("#1F3F49","#488A99" ,"#1C4E80","#4cb5f5" ,"#A5d8DD"  ))+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+      axis.text.y = element_text(size = 16),
+      title  = element_text(size = 14, face = "bold")
+      )+
+     labs(
+    title = "\nHospital Admissions by Health Board, Admission Type and SIMD\n",
+    x = "\nQuarter\n",
+    y = "\nAverage length of stay (days)\n"
+  )
+  
+  
+```
+emergency admissions in SIMD 1 and Simd 2 - length of stay
+
+```{r}
+simd %>% (distinct(SIMD)
+```
+
+SIMD - pre-covid and post-covid emergency admissions have always been at the higher level for SIMD 1 and 2  than SIMD 4 or 5
+
+planned admissions were at similar levels regardless of simd and pre-, after-covid
+
+emergency appoitments drive the pressures on NHS across the entire year
+
+
+```{r}
+
+simd <- simd %>% filter(Quarter_single == "Q1" | Quarter_single == "Q4") %>% 
+  mutate(Covid = case_when(
+  Quarter %in% c("2017Q4","2018Q1","2018Q2","2018Q3", "2018Q4", "2019Q1", "2019Q2", "2019Q3", "2019Q4", "2020Q1") ~ "Pre-Covid 19",
+    Quarter %in% c("2020Q2","2020Q3","2020Q4","2021Q1","2021Q2","2021Q3","2021Q4") ~ "During Covid_19",
+    Quarter %in% c("2022Q1", "2022Q2","2022Q3","2022Q4") ~ "Post-Covid 19"
+  ))
+
+simd %>% group_by( SIMD, Covid, AverageLengthOfStay) %>% 
+  ggplot(aes(x = Covid, y = AverageLengthOfStay, fill = SIMD))+
+  geom_boxplot()
+```
+

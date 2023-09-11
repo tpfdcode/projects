@@ -1,0 +1,309 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(here)
+library(infer)
+
+data <- clean_names(read_csv("C:/Users/emmaj/Documents/CodeClan/public_health_scotland_project/raw_data/inpatient_and_daycase_by_nhs_board_of_treatment_age_and_sex.csv"))
+```
+```{r}
+data %>% 
+  filter(is.na(average_length_of_stay_qf)) %>% 
+  distinct(average_length_of_stay)
+```
+
+```{r}
+data %>% 
+  filter(
+    admission_type == "All Inpatients" & 
+      str_detect(quarter, "201")
+  ) %>% 
+  ggplot(aes(average_length_of_stay)) +
+  geom_histogram()
+```
+
+```{r}
+bootstrap_resample <- data %>% 
+  filter(admission_type == "All Inpatients" & str_detect(quarter, "201")) %>% 
+  select(average_length_of_stay) %>% 
+  specify(response = average_length_of_stay) %>% 
+  generate(reps = 10000, type = "bootstrap") %>% 
+  calculate(stat = "mean")
+
+bootstrap_ci <- bootstrap_resample %>% 
+  get_ci(level = 0.95, type = "percentile")
+
+bootstrap_resample %>% 
+  visualise(bins = 30) +
+  shade_ci(bootstrap_ci)
+
+bootstrap_ci
+
+```
+
+```{r}
+mean_stay <- data %>% 
+  filter(admission_type == "All Inpatients" & str_detect(quarter, "201")) %>% 
+  summarise(avg_stay = mean(average_length_of_stay, na.rm = TRUE)) %>% 
+  pull()
+
+upper_ci <- bootstrap_ci %>% 
+  select(upper_ci) %>% 
+  pull()
+
+lower_ci <- bootstrap_ci %>% 
+  select(lower_ci) %>% 
+  pull()
+```
+
+
+
+```{r}
+data %>% 
+  filter(admission_type == "All Inpatients" & str_detect(quarter, "201")) %>% 
+  summarise(avg_stay = mean(average_length_of_stay, na.rm = TRUE))
+```
+
+```{r}
+data %>% 
+  # admission type, health board, age, sex, quarter
+  filter(
+    admission_type == "Elective Inpatients" & 
+      !is.na(hbqf) & 
+      age == "10-19 years" &
+      sex == "Female"
+    #str_detect(quarter, "202")
+  ) %>% 
+  group_by(quarter, sex) %>% 
+  summarise(avg_stay = mean(average_length_of_stay)) %>% 
+  ggplot(aes(quarter, avg_stay, fill = sex)) +
+  geom_line(group = 1) +
+  #geom_rect(aes(ymax = upper_ci, ymin = lower_ci, xmin = 0, xmax = Inf), fill = "red", alpha = 0.2) +
+  #geom_hline(aes(yintercept = mean_stay)) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+data %>% 
+  # admission type, health board, age, sex, quarter
+  filter(
+    admission_type == "All Inpatients" & 
+      !is.na(hbqf) &
+      age == "40-49 years" &
+      str_detect(quarter, "201")
+  ) %>% 
+  summarise(avg_stay_2 = sum(length_of_stay)/sum(stays)) %>% 
+  pull()
+```
+
+
+```{r}
+data %>% 
+  mutate(time = quarter,
+         year = str_extract(quarter, "[0-9]{4}"),
+         quarter = str_remove(quarter, "[0-9]{4}"))
+
+```
+
+
+```{r}
+length_of_stay_data <- read_csv(here("clean_data/length_of_stay_data.csv"))
+```
+
+```{r}
+length_data <- length_of_stay_data %>% 
+  filter(
+    admission_type == "Emergency Inpatients" &  
+      hb_name == "All Scotland" & 
+      age == "40-49 years" &
+      sex == "Female" &
+      !str_detect(quarter, "2017")
+    #str_detect(quarter, "202")
+  ) %>% 
+  group_by(quarter) %>% 
+  summarise(avg_stay = sum(length_of_stay)/sum(stays)) %>% 
+  mutate(time = quarter,
+         year = str_extract(quarter, "[0-9]{4}"),
+         quarter = str_remove(quarter, "[0-9]{4}"))
+  
+  years <- unique(length_data$year)
+```
+
+```{r}
+length_data %>% 
+  ggplot(aes(interaction(quarter, year), avg_stay), size = 5) +
+  geom_line(group = 1, size = 2) +
+  geom_point(size = 3) +
+  annotate("text", x = seq_len(nrow(length_data)),
+           y = min(length_data$avg_stay)-0.7,
+           label = length_data$quarter) +
+  annotate("text", x = 1 + 4 * (0:(length(years)-1)),
+           y = min(length_data$avg_stay)-1.3,
+           label = years) +
+  coord_cartesian(ylim = c(min(length_data$avg_stay), 7.5),
+                  clip = "off") +
+  geom_vline(xintercept = 10, linewidth = 1.5, colour = "red") +
+  
+  scale_colour_manual(name = "", # Add legend
+                      breaks = "Pre-covid 2018-2019 Average",
+                      values = c("Pre-covid 2018-2019 Average" = "red")) +
+  theme(
+    text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.title.x = element_text(vjust = -8),
+    plot.margin = unit(c(1, 1, 6, 1), "lines")
+  ) +
+  labs(
+    title = "Average length of stay",
+    x = "Quarter",
+    y = "Average Length of Stay (days)"
+  )
+```
+
+```{r}
+data %>% 
+  filter(admission_type %in% c("Emergency Inpatients", "Elective Inpatients", "All Inpatients")) %>% 
+  summarise(max(average_length_of_stay, na.rm = TRUE))
+```
+```{r}
+data %>% 
+  filter(average_length_of_stay == 601.6)
+```
+
+```{r}
+library(tidyverse)
+covid_admissions <- read_csv(here("clean_data/hospital_admissions_postcovid.csv"))
+```
+```{r}
+covid_admissions %>% 
+  filter(month(week_ending) == 4 & year(week_ending) == 2020)
+
+covid_admissions %>% 
+  distinct(hb)
+```
+
+```{r}
+data_by_age <- data %>% 
+  filter(
+    admission_type == "Emergency Inpatients",
+         hb == "S92000003") %>% 
+  mutate(covid = case_when(
+    str_detect(quarter, "2017|2018|2019|2020Q1") ~ "Pre\n(2017 Q4 - 2020 Q1)",
+    str_detect(quarter, "2020|2021") ~ "During\n(2020 Q2 - 2021 Q4)",
+    .default = "Post (2022)"
+  ), 
+         age_group = case_when(
+    age == "0-9 years" | age == "10-19 years" ~ "0-19",
+    age == "20-29 years" | age == "30-39 years" ~ "20-39",
+    age == "40-49 years" | age == "50-59 years" ~ "40-59",
+    age == "60-69 years" | age == "70-79 years" ~ "60-79",
+    .default = "80 and over"
+  ), .after = age) %>% 
+  mutate(covid = factor(covid, levels = c("Pre\n(2017 Q4 - 2020 Q1)", "During\n(2020 Q2 - 2021 Q4)", "Post (2022)")),
+         season = case_when(
+           str_detect(quarter, "Q2|Q3") ~ "Summer",
+           .default = "Winter"
+         )) %>% 
+  select(quarter, season, covid, age, age_group, stays, length_of_stay, average_length_of_stay, admission_type)
+
+data_by_age
+```
+
+```{r}
+data_by_age %>%
+  #filter(admission_type %in% c("Elective Inpatients", "Emergency Inpatients")) %>% 
+  # select(age, covid, average_length_of_stay) %>% 
+  group_by(age, covid, season) %>% 
+  summarise(average_length_of_stay = mean(average_length_of_stay)) %>% 
+  ggplot(aes(age, average_length_of_stay, fill = covid)) +
+  geom_col(position = "dodge") +
+  #facet_wrap(~admission_type) +
+  facet_wrap(~season) +
+  theme_light() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    text = element_text(size = 15)
+  ) +
+  labs(
+    title = "Average Length of Stay by Age",
+    x = "Age Group",
+    y = "Average Length of Stay (days)",
+    fill = "Covid"
+  )
+
+ggsave(here("plots/length_of_stay_age_facet_season.png"))
+```
+
+
+```{r}
+data_by_age %>% 
+  ggplot(aes(age_group, average_length_of_stay, fill = reorder(covid, desc(covid)))) +
+  geom_boxplot() +
+  labs(
+    title = "Average Length of Stay by Age",
+    x = "Age Group",
+    y = "Average Length of Stay (days)",
+    fill = "Covid"
+  ) +
+  theme_light()
+```
+
+```{r}
+data_by_age %>% 
+  filter(age_group == "80 and over") %>% 
+  mutate(year = str_extract(quarter, "[0-9]{4}")) %>% 
+  ggplot(aes(season, average_length_of_stay, fill = covid)) +
+  geom_boxplot() +
+  #facet_wrap(~season) +
+  labs(
+    title = "Average Length of Stay for over 80s",
+    x = "Season",
+    y = "Average Length of Stay (days)",
+    fill = "Covid"
+  ) +
+  theme_light() +
+  theme(
+    text = element_text(size = 20)
+  )
+
+ggsave(here("plots/over_80_length_of_stay_season.png"))
+```
+
+```{r}
+library(infer)
+null_dist <- data_by_age %>% 
+  filter(age_group == "80 and over") %>% 
+  specify(average_length_of_stay ~ covid) %>% 
+  hypothesise("independence") %>% 
+  generate(1000, "permute") %>% 
+  calculate("diff in means", order = c("Pre", "Post"))
+```
+
+```{r}
+obs_stat <- data_by_age %>% 
+  filter(age_group == "80 and over") %>% 
+  specify(average_length_of_stay ~ covid) %>% 
+  calculate("diff in means", order = c("Pre", "Post"))
+```
+
+```{r}
+null_dist %>% 
+  visualise()+
+  shade_p_value(obs_stat = obs_stat, direction = "left")
+```
+
+```{r}
+null_dist %>% 
+  get_p_value(obs_stat = obs_stat, direction = "left")
+```
+
+
+```{r}
+
+```
+

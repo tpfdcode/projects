@@ -1,0 +1,109 @@
+---
+title: "Market Basket Analysis"
+output: html_notebook
+---
+
+#Exercise
+
+Load in some transaction data which has details on the items purchased in each 
+transaction (where each transaction is uniquely identified by the InvoiceNo variable).
+
+```{r}
+library(tidyverse)
+transactions <- read_csv("clean_data/online_retail_subset.csv")
+```
+
+We are interested in the purchase of two particular items:
+
+item A
+
+- ‘HEART OF WICKER SMALL’ (StockCode 22469)
+
+item B
+
+- ‘LARGE CAKE TOWEL PINK SPOTS’ (StockCode 21110)
+
+1. Calculate the support for item A
+
+```{r}
+total_transactions <- transactions %>%
+  summarise(n = n_distinct(InvoiceNo)) %>%
+  flatten_dbl()
+
+support_a <- transactions %>%
+  filter(StockCode == 22469) %>%
+  summarise(prop_invoices_with_item = n_distinct(InvoiceNo) / total_transactions)
+
+support_a
+```
+Item A is purchased in 7.7% of transactions. 
+
+
+2. Calculate the support and confidence for rule (A→B)
+
+Going to join two tibbles containing the unique InvoiceNos of all the 
+transactions involving item A, and the same for item B. Then join the tibbles 
+on InvoiceNo to look for values in common: these will be transactions involving 
+both items.
+
+```{r}
+trans_feat_a <- transactions %>%
+  filter(StockCode == "22469") %>%
+  distinct(InvoiceNo)
+
+trans_feat_b <- transactions %>%
+  filter(StockCode == "21110") %>%
+  distinct(InvoiceNo)
+
+trans_feat_a_b <- trans_feat_a %>%
+  inner_join(trans_feat_b, by = "InvoiceNo")
+
+support_a_b <- trans_feat_a_b %>%
+  summarise(prop_with_a_b = n() / total_transactions)
+support_a_b
+```
+
+```{r}
+confidence_a_b <- support_a_b / support_a
+confidence_a_b
+```
+Can find this out in a single pipeline
+
+```{r}
+support_a_b <- transactions %>%
+  filter(StockCode == "22469" | StockCode == "21110") %>%
+  group_by(InvoiceNo, StockCode) %>% #group by in case cases where more than one stock in a purchase
+  summarise(count_of_item = n()) %>% 
+  group_by(InvoiceNo) %>%
+  summarise(count_of_A_and_B = n()) %>%
+  filter(count_of_A_and_B > 1) %>%
+  summarise(prop_with_A_and_B = n()/total_transactions)
+```
+```{r}
+support_a_b 
+```
+```{r}
+confidence_a_b <- support_a_b / support_a
+
+confidence_a_b
+```
+If someone buys item A there is an 4.6% probability that they will then buy item B. 
+
+3. Calculate the lift for (A→B)
+
+```{r}
+support_b <- transactions %>%
+  filter(StockCode == 21110) %>%
+  summarise(prop_invoices_with_item = n_distinct(InvoiceNo)/total_transactions)
+
+lift_a_b <- support_a_b / (support_a * support_b)
+
+lift_a_b
+```
+The lift is high, so A and B are more likely to be sold together, but from the 
+support of A (7.7%) and confidence of (A→B) (4.6%), we see that happens at quite
+a low frequency.
+
+
+
+

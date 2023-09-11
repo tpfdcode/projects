@@ -1,0 +1,283 @@
+---
+title: "Wine Quality Manual Model Building"
+output: html_notebook
+---
+##Brief
+
+Investigate the wine_quality_red and wine_quality_white datasets, and, in particular, to model the quality of the wines. Use regression to determine which physiochemical properties make a wine ‘good’. 
+
+Could use leaps or glmulti but doing a manual model
+
+Cleaning below:
+
+```{r}
+library(tidyverse)
+library(GGally)
+library(modelr)
+library(janitor)
+library(ggfortify)
+```
+
+```{r}
+wine_red <- read_csv("data/wine_quality_red.csv")
+wine_white <- read_csv("data/wine_quality_white.csv")
+head(wine_red)
+head(wine_white)
+```
+Both are in the same format so adding a wine_colour col. Could look at each seperately but deciding to combine.
+
+```{r}
+wine_red <- wine_red %>% 
+  mutate(wine_colour = 'red', .before = fixed_acidity)
+
+wine_white <- wine_white %>% 
+  mutate(wine_colour = 'white', .before = fixed_acidity)
+```
+
+
+```{r}
+# Extracting the final wine_id of wine_red
+last_red_row <- nrow(wine_red)
+
+# Mutating the wine_id's of wine_white by adding this value to each
+wine_white <- wine_white %>% 
+  mutate(wine_id = wine_id + last_red_row)
+
+# Binding so each wine has a unique id in the final dataframe
+wine_both <- bind_rows(wine_red, wine_white)
+#View(wine_both)
+
+# Removing wine_id
+wine_both <- wine_both %>% 
+  select(-wine_id)
+```
+
+Checking how many different levels of the categorical variable region there are.
+
+```{r}
+wine_both %>%
+  distinct(region) %>%
+  summarise(number_of_regions = n())
+```
+
+```{r}
+wine_both <- wine_both %>% 
+  mutate(region = as.factor(region),
+         wine_colour = as.factor(wine_colour))
+
+class(wine_both$region)
+class(wine_both$wine_colour)
+```
+
+Checking for aliased variables:
+
+```{r}
+alias(quality ~ ., data = wine_both)
+```
+Variable selection:
+
+```{r}
+wine_both %>%
+  select(quality, fixed_acidity, volatile_acidity, citric_acid, p_h) %>%
+  ggpairs() + 
+   theme_grey(base_size = 8) 
+```
+Most highly correlated with quality is volatile_acidity at -0.25. 
+
+```{r}
+wine_both %>%
+  select(quality, residual_sugar, chlorides, free_sulfur_dioxide, total_sulfur_dioxide, sulphates, density, alcohol) %>%
+  ggpairs() +
+  theme_grey(base_size = 1) + 
+  theme(strip.text = element_text(size = 5)) 
+```
+
+Alcohol and density have a pretty strong positive correlation of almost 0.7 so will drop density from the model.
+
+total_sulfur_dioxide is highly correlated with free_sulfur_dioxide so will drop one.
+
+```{r}
+wine_both <- wine_both %>%
+  select(-density, -free_sulfur_dioxide)
+```
+
+Looking at categorical variables
+
+```{r}
+wine_both %>%
+  select(quality, wine_colour, region) %>%
+  ggpairs() + 
+   theme_grey(base_size = 8)
+```
+
+alcohol, chlorides, and volatile_acidity seem reasonable
+
+```{r}
+model1a <- lm(quality ~ alcohol, data = wine_both)
+
+autoplot(model1a)
+```
+```{r}
+summary(model1a)
+```
+
+```{r}
+model1b <- lm(quality ~ chlorides, data = wine_both)
+
+autoplot(model1b)
+
+summary(model1b)
+```
+Not as good
+
+```{r}
+model1c <- lm(quality ~ total_sulfur_dioxide, data = wine_both)
+
+autoplot(model1c)
+
+summary(model1c)
+```
+
+Re-running ggpairs() with the residuals for alcohol model.
+
+```{r}
+wine_remaining_resid <- wine_both %>%
+  add_residuals(model1a) %>%
+  select(-c("quality", "alcohol"))
+
+ggpairs(wine_remaining_resid) + 
+  theme_grey(base_size = 1) +
+  theme(strip.text = element_text(size = 5)) 
+```
+
+Looks like volatile_acidity and residual_sugar could show something.
+
+```{r}
+model2a <- lm(quality ~ alcohol + chlorides, data = wine_both)
+
+autoplot(model2a)
+summary(model2a)
+```
+
+```{r}
+model2b <- lm(quality ~ alcohol + volatile_acidity, data = wine_both)
+
+autoplot(model2b)
+summary(model2b)
+```
+```{r}
+model2c <- lm(quality ~ alcohol + residual_sugar, data = wine_both)
+
+autoplot(model2c)
+summary(model2c)
+```
+model2b performs best, using ANOVA to see if addition is justifiable 
+
+```{r}
+anova(model1a, model2b)
+```
+keeping it and moving ot next variable.
+
+```{r}
+wine_remaining_resid <- wine_both %>%
+  add_residuals(model2b) %>%
+  select(-c("quality", "alcohol", "volatile_acidity"))
+
+ggpairs(wine_remaining_resid) + 
+   theme_grey(base_size = 1) + 
+   theme(strip.text = element_text(size = 5)) 
+```
+
+contender variables look to be sulphates and residual_sugar
+
+```{r}
+model3a <- lm(quality ~ alcohol + volatile_acidity + sulphates, data = wine_both)
+
+autoplot(model3a)
+summary(model3a)
+```
+```{r}
+model3b <- lm(quality ~ alcohol + volatile_acidity + residual_sugar, data = wine_both)
+
+autoplot(model3b)
+summary(model3b)
+```
+```{r}
+# Justified in adding this third predictor
+anova(model2b, model3a)
+```
+Next variable:
+
+```{r}
+wine_remaining_resid <- wine_both %>%
+  add_residuals(model3a) %>%
+  select(-c("quality", "alcohol", "volatile_acidity", "sulphates"))
+
+ggpairs(wine_remaining_resid) + 
+   theme_grey(base_size = 1) + 
+   theme(strip.text = element_text(size = 5))
+```
+
+residual_sugar is the only likely addition 
+
+```{r}
+model4 <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar, data = wine_both)
+
+autoplot(model4)
+summary(model4)
+```
+```{r}
+# Justified in adding this fourth predictor
+anova(model3a, model4)
+```
+Leaving at 4 predictors as to not impact the overall R^2 further.
+
+Moving on to pair interactions of which there are 6:
+
+
+    alcohol:volatile_acidity
+    alcohol:sulphates
+    alcohol:residual_sugar
+    volatile_acidity:sulphates
+    volatile_acidity:residual_sugar
+    sulphates:residual_sugar
+
+```{r}
+model5pa <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + alcohol:volatile_acidity, data = wine_both)
+summary(model5pa)
+```
+
+```{r}
+model5pb <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + alcohol:sulphates, data = wine_both)
+summary(model5pb)
+```
+
+```{r}
+model5pc <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + alcohol:residual_sugar, data = wine_both)
+summary(model5pc)
+```
+
+```{r}
+model5pd <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + volatile_acidity:sulphates, data = wine_both)
+summary(model5pd)
+```
+
+```{r}
+model5pe <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + volatile_acidity:residual_sugar, data = wine_both)
+summary(model5pe)
+```
+
+```{r}
+model5pf <- lm(quality ~ alcohol + volatile_acidity + sulphates + residual_sugar + sulphates:residual_sugar, data = wine_both)
+summary(model5pf)
+```
+
+model5pe with the alcohol, volatile_acidity, sulphates, residual_sugar, and volatile_acidity:residual_sugar is the best
+
+```{r}
+anova(model4, model5pe)
+```
+final model is:
+
+quality ~ alcohol + volatile_acidity + sulphates + residual_sugar +   volatile_acidity:residual_sugar
+

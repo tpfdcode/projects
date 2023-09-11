@@ -1,0 +1,203 @@
+---
+title: "Text Analysis and Modelling"
+output: html_notebook
+---
+
+#Brief
+
+For this exercise I am working with Jane Austen data, data from the package hcandersenr (this has the text of Hans Christian Andersen fairy tales), and data from the package languageR (this has the text of “Alice in Wonderland”). I’ll also be using a dataset of movie reviews from the text2vec package.
+
+I will be:
+
+1. Creating a word cloud of the top words that appear in the book “The Little Mermaid”.
+
+2. Making a bar chart showing the top 10 most frequent sentiment words in “The Little Mermaid”. Making the length of the bars depend on how often the words are said, and making the colour of the bars depend on the sentiment of the word.
+
+3. Finding the most common bigrams in “Alice in Wonderland” that start with “very” followed by a sentiment word from the "bing" sentiment list.
+
+4. Using TF-IDF scores to find the 5 words most associated with the three sets of books looked at so far (Hans Christian Andersen stories, Jane Austen’s novels, and Lewis Carroll’s “Alice in Wonderland”).
+
+5. Creating an appropriate regression model that predicts sentiment using the word dummies and identifying which words are important for predicting sentiment in the movie review data set.
+
+6. Creating sentiment arcs that show how the sentiment changes though the following Hans Christian Andersen stories:
+
+  “The Little Mermaid”
+  “Thumbelina”
+  “The Snow Queen”
+  “The Ugly Duckling”
+  “The Princess and the Pea”
+
+## Preparation
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(ggwordcloud)
+library(janeaustenr)
+```
+
+```{r}
+library(hcandersenr)
+hcandersen_en
+```
+
+```{r}
+library(languageR)
+
+head(alice, 20)
+```
+
+```{r}
+alice_book_words <- tibble(book = 'Alice in Wonderland', text = alice)
+```
+
+```{r}
+alice_book_collapsed <- tibble(book = 'Alice in Wonderland',
+                               text = str_c(alice, collapse = ' '))
+```
+
+```{r}
+library(text2vec)
+glimpse(movie_review)
+```
+
+
+1. Creating a word cloud of the top words that appear in the book “The Little Mermaid”.
+
+```{r}
+little_mermaid_words <- hcandersen_en %>%
+  filter(book == "The little mermaid") %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+ggwordcloud(
+  words = little_mermaid_words$word,
+  freq = little_mermaid_words$n,
+  min.freq = 10
+)
+```
+
+2. Making a bar chart showing the top 10 most frequent sentiment words in “The Little Mermaid”. Making the length of the bars depend on how often the words are said, and making the colour of the bars depend on the sentiment of the word.
+
+```{r}
+little_mermaid_words %>%
+  inner_join(get_sentiments("afinn")) %>%
+  slice(1:10) %>%
+  mutate(word = factor(word, levels = word)) %>%
+  ggplot() +
+  aes(x = word, y = n, fill = value) +
+  geom_col() +
+  scale_fill_gradient2()
+```
+
+3. Finding the most common bigrams in “Alice in Wonderland” that start with “very” followed by a sentiment word from the "bing" sentiment list.
+
+```{r}
+alice_bigrams <-
+alice_book_collapsed %>% 
+unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+separate(bigram, c("word_1", "word_2"), sep = " ")
+```
+
+```{r}
+alice_bigrams
+```
+
+
+```{r}
+alice_bigrams %>%
+  inner_join(get_sentiments("bing"), by = c("word_2" = "word")) %>%
+  filter(word_1 == "very") %>%
+  count(word_1, word_2, sentiment, sort = TRUE)
+```
+
+4. Using TF-IDF scores to find the 5 words most associated with the three sets of books looked at so far (Hans Christian Andersen stories, Jane Austen’s novels, and Lewis Carroll’s “Alice in Wonderland”).
+
+```{r}
+compare <- bind_rows(
+  austen = austen_books(),
+  anderson = hcandersen_en,
+  carroll = alice_book_words,
+  .id = 'author'
+)
+```
+
+```{r}
+compare %>%
+  unnest_tokens(word, text) %>%
+  count(author, word) %>%
+  bind_tf_idf(word, author, n) %>%
+  arrange(author, desc(tf_idf)) %>%
+  group_by(author) %>%
+  slice(1:5)
+```
+
+5. Creating an appropriate regression model that predicts sentiment using the word dummies and identifying which words are important for predicting sentiment in the movie review data set.
+
+```{r}
+reviews  <-
+movie_review %>%
+  unnest_tokens(word, review) %>% 
+  as_tibble() %>%
+  anti_join(stop_words) 
+```
+
+```{r}
+top_50 <- 
+reviews %>%
+  count(word, sort = TRUE) %>%
+  top_n(50)
+```
+
+```{r}
+reviews <- 
+reviews %>%
+  inner_join(top_50) 
+
+reviews <-
+  reviews %>%
+  distinct(id, word, .keep_all = TRUE) %>%
+  mutate(present = 1) %>%
+  spread(word, present, fill = 0) %>%
+  select(-id, -n)
+```
+
+```{r}
+model <- glm(sentiment ~ ., data = reviews, family = binomial(link = "logit"))
+```
+
+```{r}
+broom::tidy(model) %>% 
+  arrange(p.value)
+```
+
+6. Creating sentiment arcs that show how the sentiment changes though the following Hans Christian Andersen stories:
+
+  “The Little Mermaid”
+  “Thumbelina”
+  “The Snow Queen”
+  “The Ugly Duckling”
+  “The Princess and the Pea”
+  
+```{r}
+hcandersen_en %>%
+  filter(book %in% c("The little mermaid", "Thumbelina", "The snow queen", "The ugly duckling", "The princess and the pea")) %>%
+  unnest_tokens(word, text) %>%
+  inner_join(get_sentiments("afinn")) %>%
+  group_by(book) %>%
+  mutate(
+    word_n = row_number()
+  ) %>%
+  mutate(
+    story_position = word_n/max(word_n) # all books on scale from 0 to 1
+  ) %>% 
+ggplot +
+  aes(x = story_position, y = value, colour = book) +
+  geom_smooth(se = FALSE) +
+  guides(colour = FALSE) +
+  facet_wrap(~book, nrow = 5)
+```
+
