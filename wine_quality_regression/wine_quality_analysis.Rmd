@@ -2,7 +2,7 @@
 title: "Wine Quality Manual Model Building"
 output: html_notebook
 ---
-##Brief
+## Brief
 
 Investigate the wine_quality_red and wine_quality_white datasets, and, in particular, to model the quality of the wines. Use regression to determine which physiochemical properties make a wine ‘good’. 
 

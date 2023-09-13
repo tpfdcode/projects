@@ -3,11 +3,11 @@ title: "Citrus Hill Logistic Regression"
 output: html_notebook
 ---
 
-#Brief
+# Brief
 
 Provided with a set of data on customer purchases of either ‘Citrus Hill’ (purchase = 'CH') or ‘Minute Maid’ (purchase = 'MM') orange juice, together with some further attributes of both the customer and the store of purchase, build the best predictive classifier of whether a customer is likely to buy Citrus Hill or Minute Maid juice. 
 
-##Data Wrangling
+## Data Wrangling
 
 ```{r}
 library(tidyverse)
